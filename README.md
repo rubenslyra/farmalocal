@@ -1,604 +1,1161 @@
 # 💊 FarmaLocal
 
 Sistema de gerenciamento para farmácias locais, desenvolvido com **.NET 10**, focado em boas práticas de acesso a dados, arquitetura limpa e estímulo ao pensamento crítico e analítico do desenvolvedor.
+---
+
+Sim — e o melhor caminho é justamente transformar os dois em uma **proposta única, coerente e madura**, unindo:
+
+* o **material bruto de pesquisa farmacêutica**
+* a **visão de negócio do FarmaLocal**
+* a **modelagem corporativa do banco**
+* a **estratégia técnica para estudo com SQL, C#, Dapper e futuras variações**
+
+Abaixo está o **merge completo e rico**, já consolidado como base oficial do projeto.
 
 ---
 
-## 📋 Índice
+# FarmaLocal — Modelo de Negócio + Modelo de Dados + Direção Técnica
 
-1. [Visão Geral](#visão-geral)
-2. [Tecnologias Utilizadas](#tecnologias-utilizadas)
-3. [Por que Dapper?](#por-que-dapper)
-4. [Transações e Consistência de Dados](#transações-e-consistência-de-dados)
-5. [Stored Procedures, Views e Functions](#stored-procedures-views-e-functions)
-6. [Padrões de Acesso a Dados](#padrões-de-acesso-a-dados)
-7. [Paginação e Performance](#paginação-e-performance)
-8. [Migrações de Banco de Dados](#migrações-de-banco-de-dados)
-9. [Arquitetura e Padrões de Projeto](#arquitetura-e-padrões-de-projeto)
-10. [Pensamento Crítico e Analítico para o Desenvolvedor](#pensamento-crítico-e-analítico-para-o-desenvolvedor)
-11. [Como Executar o Projeto](#como-executar-o-projeto)
-12. [Contribuição](#contribuição)
+## 1. Visão geral do projeto
 
----
+O **FarmaLocal** é um projeto de estudos com foco em engenharia de software aplicada ao domínio farmacêutico. A proposta é desenvolver um sistema de gestão e vendas para farmácias, com base em práticas reais de mercado, permitindo estudar e comparar tecnologias como **SQL, PostgreSQL, SQL Server, C#, Dapper, APIs, aplicações desktop e futuras versões em outras linguagens e frameworks**.
 
-## 🔍 Visão Geral
+O projeto não deve ser tratado como um CRUD simples. Ele deve funcionar como um **laboratório de arquitetura de software**, com um domínio suficientemente rico para exigir:
 
-O **FarmaLocal** é uma API RESTful para gestão de farmácias de bairro. O projeto cobre os seguintes domínios:
+* modelagem relacional séria
+* regras transacionais
+* integridade referencial
+* especialização de entidades
+* rastreabilidade de estoque
+* validações regulatórias
+* separação entre núcleo operacional e extensões do domínio
 
-- **Catálogo de Medicamentos** – cadastro, busca e controle de estoque
-- **Vendas e Prescrições** – registro de vendas com e sem receita médica
-- **Fornecedores** – gestão de fornecedores e pedidos de reposição
-- **Funcionários e Papéis** – controle de acesso por perfil (farmacêutico, atendente, gerente)
-- **Relatórios e Auditoria** – rastreio de operações para fins legais e gerenciais
+Em outras palavras, o FarmaLocal pode virar um projeto-âncora de portfólio técnico.
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## 2. Objetivo do sistema
 
-| Camada | Tecnologia |
-|---|---|
-| Linguagem / Runtime | C# 14 / .NET 10 |
-| Banco de Dados | SQL Server / PostgreSQL |
-| Micro-ORM | **Dapper 2.x** |
-| Migrações | FluentMigrator ou scripts SQL versionados |
-| Testes | xUnit + NSubstitute + Testcontainers |
-| Documentação da API | Scalar (alternativa ao Swagger UI, compatível com OpenAPI nativo do .NET 10) |
-| Contêineres | Docker + Docker Compose |
+O objetivo do FarmaLocal é permitir a gestão integrada de:
 
-> **Nota sobre o .NET 10:** O .NET 10 (LTS) traz melhorias significativas de performance no pipeline de HTTP, novos recursos de `System.Text.Json`, suporte aprimorado a OpenAPI nativo e um conjunto de APIs `Span<T>` / `Memory<T>` ainda mais amplo. Aproveite essas melhorias ao implementar os repositórios e os endpoints da API.
+* catálogo de produtos farmacêuticos e não farmacêuticos
+* medicamentos e suas particularidades regulatórias
+* estoque por lote e validade
+* vendas no balcão/PDV
+* receitas vinculadas à venda
+* clientes, convênios e histórico de compra
+* relatórios operacionais e gerenciais
 
----
-
-## ⚙️ Por que Dapper?
-
-### Contexto de decisão
-
-Em muitos projetos, o **Entity Framework Core** é a escolha padrão por abstrair completamente o SQL. No entanto, existem cenários em que um micro-ORM como o **Dapper** é mais adequado:
-
-| Critério | Entity Framework Core | Dapper |
-|---|---|---|
-| Curva de aprendizado | Alta (LINQ, migrations, change tracker) | Baixa (SQL puro + mapeamento) |
-| Performance em consultas complexas | Pode gerar SQL ineficiente | SQL escrito à mão, previsível |
-| Stored Procedures / Views / TVFs | Suporte limitado | Suporte nativo e direto |
-| Controle total sobre o SQL | Difícil | Total |
-| Manutenção em projetos legados | Complicada | Simples (SQL existente reaproveitado) |
-
-### Por que Dapper neste projeto?
-
-1. **SQL explícito**: o desenvolvedor vê e controla exatamente o que é enviado ao banco.
-2. **Performance**: mapeamento direto de `IDataReader` para objetos C# sem overhead de rastreamento.
-3. **Stored Procedures**: integração nativa via `CommandType.StoredProcedure`.
-4. **Aprendizado**: obriga o desenvolvedor a pensar em **índices**, **planos de execução** e **normalização**.
-
-### Exemplo básico de uso
-
-```csharp
-public sealed class MedicamentoRepository : IMedicamentoRepository
-{
-    private readonly IDbConnection _db;
-
-    public MedicamentoRepository(IDbConnection db) => _db = db;
-
-    // Consulta parametrizada – nunca concatene strings com input do usuário!
-    public async Task<Medicamento?> ObterPorIdAsync(int id)
-    {
-        const string sql = "SELECT Id, Nome, PrincipioAtivo, Estoque FROM Medicamentos WHERE Id = @Id";
-        return await _db.QueryFirstOrDefaultAsync<Medicamento>(sql, new { Id = id });
-    }
-
-    // Inserção com retorno do Id gerado
-    public async Task<int> InserirAsync(Medicamento medicamento)
-    {
-        const string sql = """
-            INSERT INTO Medicamentos (Nome, PrincipioAtivo, Estoque)
-            OUTPUT INSERTED.Id
-            VALUES (@Nome, @PrincipioAtivo, @Estoque)
-            """;
-        return await _db.ExecuteScalarAsync<int>(sql, medicamento);
-    }
-}
-```
-
-> 💡 **Ponto de reflexão:** Qual o custo de não utilizar parâmetros em consultas SQL? Pesquise sobre **SQL Injection** e como o Dapper mitiga esse risco por padrão.
+Além disso, o sistema deve servir como base para diferentes implementações, mantendo o mesmo domínio e a mesma lógica de negócio.
 
 ---
 
-## 🔄 Transações e Consistência de Dados
+## 3. Conceito central da modelagem
 
-Transações garantem que um conjunto de operações seja **atômico** (tudo ou nada), **consistente**, **isolado** e **durável** — os famosos critérios **ACID**.
+O ponto mais importante do seu material está correto e deve ser preservado no desenho final:
 
-### Quando usar transações?
+> **medicamento não deve existir como um sistema isolado fora do catálogo**
+>
+> o correto é ter uma **base única de produtos**, com especializações para os itens que possuem exigências próprias, como medicamentos, equipamentos e itens de higiene.
 
-- Ao registrar uma **venda**: debitar o estoque e criar o registro de venda devem ocorrer juntos.
-- Ao processar um **pedido de reposição**: múltiplos itens devem ser persistidos ou todos revertidos.
-- Em qualquer operação que envolva **mais de uma tabela** com dependência lógica entre elas.
+Essa é a abordagem mais profissional porque:
 
-### Transação manual com Dapper
+* mantém o PDV unificado
+* evita duplicação de estrutura
+* facilita estoque e financeiro
+* permite especializar sem quebrar o núcleo
+* funciona melhor para expansão futura
 
-```csharp
-public async Task RegistrarVendaAsync(Venda venda)
-{
-    using var connection = _connectionFactory.Create();
-    await connection.OpenAsync();
+Portanto, o FarmaLocal deve nascer com uma arquitetura baseada em:
 
-    using var transaction = connection.BeginTransaction();
-    try
-    {
-        const string sqlVenda = """
-            INSERT INTO Vendas (ClienteId, DataVenda, Total)
-            OUTPUT INSERTED.Id
-            VALUES (@ClienteId, @DataVenda, @Total)
-            """;
+### núcleo central
 
-        int vendaId = await connection.ExecuteScalarAsync<int>(
-            sqlVenda, venda, transaction);
+* produto
+* categoria
+* fabricante
+* apresentação
+* estoque
+* venda
 
-        foreach (var item in venda.Itens)
-        {
-            const string sqlItem = """
-                INSERT INTO ItensVenda (VendaId, MedicamentoId, Quantidade, PrecoUnitario)
-                VALUES (@VendaId, @MedicamentoId, @Quantidade, @PrecoUnitario)
-                """;
-            await connection.ExecuteAsync(sqlItem,
-                new { VendaId = vendaId, item.MedicamentoId, item.Quantidade, item.PrecoUnitario },
-                transaction);
+### extensões especializadas
 
-            const string sqlEstoque = """
-                UPDATE Medicamentos
-                SET Estoque = Estoque - @Quantidade
-                WHERE Id = @Id AND Estoque >= @Quantidade
-                """;
-            int linhasAfetadas = await connection.ExecuteAsync(
-                sqlEstoque, new { item.Quantidade, Id = item.MedicamentoId }, transaction);
-
-            if (linhasAfetadas == 0)
-                throw new EstoqueInsuficienteException(item.MedicamentoId);
-        }
-
-        transaction.Commit();
-    }
-    catch
-    {
-        transaction.Rollback();
-        throw;
-    }
-}
-```
-
-### Níveis de isolamento
-
-O SQL Server e o PostgreSQL oferecem diferentes níveis de isolamento. Escolha o nível adequado ao contexto:
-
-| Nível | Phantom Reads | Non-Repeatable Reads | Dirty Reads | Indicado para |
-|---|---|---|---|---|
-| `READ UNCOMMITTED` | ✅ | ✅ | ✅ | Relatórios não críticos |
-| `READ COMMITTED` (padrão) | ✅ | ✅ | ❌ | Maioria das operações |
-| `REPEATABLE READ` | ✅ | ❌ | ❌ | Leituras que devem ser estáveis |
-| `SERIALIZABLE` | ❌ | ❌ | ❌ | Operações financeiras críticas |
-| `SNAPSHOT` (SQL Server) | ❌ | ❌ | ❌ | Alta concorrência sem bloqueios |
-
-```csharp
-using var transaction = connection.BeginTransaction(IsolationLevel.RepeatableRead);
-```
-
-> 💡 **Ponto de reflexão:** O que acontece com o estoque se duas vendas forem processadas simultaneamente sem o nível de isolamento correto? Estude **race conditions** e **pessimistic vs optimistic concurrency**.
+* medicamento
+* princípio ativo
+* receita
+* equipamento
+* atributos extras por categoria
 
 ---
 
-## 🗄️ Stored Procedures, Views e Functions
+## 4. Modelo de negócio consolidado
 
-### Stored Procedures
+## 4.1. Proposta de valor
 
-As **Stored Procedures** são blocos de código SQL compilados e armazenados no banco. Elas oferecem:
+O FarmaLocal oferece uma estrutura de gestão farmacêutica que une:
 
-- **Performance**: plano de execução reutilizado pelo banco
-- **Segurança**: permissões granulares por procedure, sem expor tabelas diretamente
-- **Centralização**: lógica de negócio complexa mantida no banco quando apropriado
+* operação de loja
+* controle de estoque com rastreabilidade
+* suporte à venda de medicamentos sujeitos a regras
+* busca por nome comercial e princípio ativo
+* unificação de medicamentos, higiene, perfumaria, correlatos e equipamentos em um único sistema
 
-#### Exemplo: Procedure para venda com controle de estoque
+Para projeto de estudo, isso tem um valor enorme porque permite praticar cenários reais como:
 
-```sql
--- SQL Server
-CREATE PROCEDURE sp_RegistrarVenda
-    @ClienteId  INT,
-    @Itens      NVARCHAR(MAX), -- JSON: [{"MedicamentoId":1,"Quantidade":2,"Preco":10.50}]
-    @VendaId    INT OUTPUT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    BEGIN TRANSACTION;
-
-    BEGIN TRY
-        INSERT INTO Vendas (ClienteId, DataVenda)
-        VALUES (@ClienteId, GETDATE());
-
-        SET @VendaId = SCOPE_IDENTITY();
-
-        INSERT INTO ItensVenda (VendaId, MedicamentoId, Quantidade, PrecoUnitario)
-        SELECT @VendaId,
-               j.MedicamentoId,
-               j.Quantidade,
-               j.Preco
-        FROM OPENJSON(@Itens)
-        WITH (MedicamentoId INT, Quantidade INT, Preco DECIMAL(10,2)) AS j;
-
-        UPDATE m
-        SET m.Estoque = m.Estoque - j.Quantidade
-        FROM Medicamentos m
-        JOIN (
-            SELECT MedicamentoId, Quantidade
-            FROM OPENJSON(@Itens) WITH (MedicamentoId INT, Quantidade INT)
-        ) j ON m.Id = j.MedicamentoId;
-
-        COMMIT TRANSACTION;
-    END TRY
-    BEGIN CATCH
-        ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH;
-END;
-```
-
-#### Chamada com Dapper
-
-```csharp
-public async Task<int> RegistrarVendaViaSpAsync(int clienteId, IEnumerable<ItemVenda> itens)
-{
-    var parameters = new DynamicParameters();
-    parameters.Add("@ClienteId", clienteId);
-    parameters.Add("@Itens", JsonSerializer.Serialize(itens));
-    parameters.Add("@VendaId", dbType: DbType.Int32, direction: ParameterDirection.Output);
-
-    await _db.ExecuteAsync(
-        "sp_RegistrarVenda",
-        parameters,
-        commandType: CommandType.StoredProcedure);
-
-    return parameters.Get<int>("@VendaId");
-}
-```
-
-### Views
-
-**Views** são consultas nomeadas e reutilizáveis. Use-as para:
-- Simplificar consultas complexas com múltiplos `JOIN`
-- Criar uma camada de abstração entre o schema físico e a aplicação
-- Implementar **Row-Level Security** via views filtradas
-
-```sql
-CREATE VIEW vw_EstoqueCritico AS
-SELECT
-    m.Id,
-    m.Nome,
-    m.PrincipioAtivo,
-    m.Estoque,
-    m.EstoqueMinimo,
-    (m.EstoqueMinimo - m.Estoque) AS Deficit
-FROM Medicamentos m
-WHERE m.Estoque < m.EstoqueMinimo;
-```
-
-```csharp
-// Consultar a view é idêntico a consultar uma tabela
-var criticos = await _db.QueryAsync<AlertaEstoque>(
-    "SELECT * FROM vw_EstoqueCritico ORDER BY Deficit DESC");
-```
-
-### Table-Valued Functions (TVFs)
-
-Funções de tabela permitem consultas parametrizadas reutilizáveis:
-
-```sql
-CREATE FUNCTION fn_VendasPorPeriodo
-(
-    @Inicio DATE,
-    @Fim    DATE
-)
-RETURNS TABLE AS
-RETURN
-(
-    SELECT
-        v.Id,
-        v.DataVenda,
-        c.Nome AS Cliente,
-        SUM(i.Quantidade * i.PrecoUnitario) AS Total
-    FROM Vendas v
-    JOIN Clientes c ON c.Id = v.ClienteId
-    JOIN ItensVenda i ON i.VendaId = v.Id
-    WHERE v.DataVenda BETWEEN @Inicio AND @Fim
-    GROUP BY v.Id, v.DataVenda, c.Nome
-);
-```
-
-```csharp
-var vendas = await _db.QueryAsync<ResumoVenda>(
-    "SELECT * FROM fn_VendasPorPeriodo(@Inicio, @Fim)",
-    new { Inicio = DateTime.Today.AddDays(-30), Fim = DateTime.Today });
-```
-
-> 💡 **Ponto de reflexão:** Quando faz sentido colocar lógica no banco (procedures/functions) versus na aplicação? Avalie os impactos em **testabilidade**, **portabilidade** e **manutenabilidade**.
+* venda com transação
+* controle de lote
+* integridade de estoque
+* descontos e convênios
+* busca inteligente
+* validação regulatória
+* relatórios orientados a negócio
 
 ---
 
-## 📊 Padrões de Acesso a Dados
+## 4.2. Público-alvo do sistema
 
-### Repository Pattern
+Embora seja um projeto de estudos, o modelo deve refletir um sistema que serviria para:
 
-Abstraia o acesso ao banco atrás de interfaces para facilitar testes e trocar implementações:
+* farmácias independentes
+* drogarias de bairro
+* pequenas redes
+* balcão
+* caixa
+* farmacêutico
+* gestor de estoque
+* administrador da loja
 
-```csharp
-public interface IMedicamentoRepository
-{
-    Task<Medicamento?> ObterPorIdAsync(int id);
-    Task<IEnumerable<Medicamento>> ListarAsync(FiltroMedicamento filtro);
-    Task<int> InserirAsync(Medicamento medicamento);
-    Task AtualizarAsync(Medicamento medicamento);
-    Task RemoverAsync(int id);
-}
+---
+
+## 4.3. Problemas que o sistema resolve
+
+O sistema precisa resolver estes problemas centrais:
+
+* controlar diferentes tipos de produto em um mesmo catálogo
+* permitir a venda segura de medicamentos
+* rastrear lotes e validade
+* impedir venda irregular de itens que exigem receita
+* permitir busca por nome comercial, fabricante e princípio ativo
+* manter integridade no estoque
+* suportar descontos, convênios e histórico do cliente
+* gerar dados confiáveis para relatórios
+
+---
+
+## 4.4. Módulos do sistema
+
+O FarmaLocal pode ser dividido em módulos:
+
+### Catálogo
+
+* categorias
+* fabricantes/laboratórios
+* produtos
+* apresentações
+* princípios ativos
+
+### Medicamentos
+
+* tipo do medicamento
+* tarja
+* registro
+* exigência de receita
+* controle especial
+
+### Estoque
+
+* lotes
+* validade
+* movimentações
+* entrada e saída
+* critério FEFO
+
+### PDV
+
+* venda
+* itens
+* desconto
+* pagamento
+* vinculação ao lote
+
+### Receita e regulação
+
+* dados da receita
+* médico
+* paciente
+* retenção
+* vínculo ao item vendido
+
+### Relacionamento
+
+* cliente
+* convênio
+* histórico
+* compras por CPF
+
+### Relatórios
+
+* produtos vencendo
+* mais vendidos
+* giro por categoria
+* venda por fabricante
+* venda por princípio ativo
+* clientes recorrentes
+
+---
+
+# 5. Modelo conceitual do domínio
+
+Agora vem o merge mais importante: o seu material bruto com uma modelagem mais sólida.
+
+## 5.1. Produto como entidade-base
+
+A entidade **Produto** é a base comercial e operacional do sistema. Ela representa o item de catálogo, independentemente de ser:
+
+* medicamento
+* correlato
+* higiene
+* perfumaria
+* equipamento
+* suplemento
+
+Isso evita criar “silos” de modelagem.
+
+### Produto deve conter
+
+* identidade comercial
+* categoria
+* fabricante
+* nome de exibição
+* status de ativação
+
+Mas ele **não deve carregar tudo sozinho**.
+
+---
+
+## 5.2. Apresentação como unidade vendável
+
+Aqui está uma melhoria importante sobre o texto bruto: o que é vendido no PDV normalmente não é o “produto abstrato”, mas a sua **apresentação específica**.
+
+Exemplo:
+
+* Produto: Paracetamol
+* Apresentação 1: Paracetamol 500mg comprimido caixa com 10
+* Apresentação 2: Paracetamol 750mg comprimido caixa com 20
+* Apresentação 3: Paracetamol gotas 200mg/ml frasco 15ml
+
+Por isso, o sistema deve ter uma tabela de **apresentação**.
+
+Essa tabela é a verdadeira unidade comercial de venda, estoque, EAN e preço.
+
+---
+
+## 5.3. Distinção entre marca, nome comercial e princípio ativo
+
+O seu material já traz essa distinção, e ela deve ser mantida.
+
+### Fabricante / laboratório
+
+É a empresa responsável pela marca, produção ou titularidade do produto.
+
+Exemplos:
+
+* EMS
+* Medley
+* Eurofarma
+* Pfizer
+* Bayer
+
+### Nome comercial
+
+É o nome fantasia usado comercialmente.
+
+Exemplos:
+
+* Tylenol
+* Novalgina
+* Advil
+* Aspirina
+
+### Princípio ativo
+
+É a substância química responsável pelo efeito terapêutico.
+
+Exemplos:
+
+* Paracetamol
+* Dipirona monoidratada
+* Ibuprofeno
+* Amoxicilina
+
+### Conclusão de modelagem
+
+Então o correto é:
+
+* **Fabricante** em tabela própria
+* **Nome comercial** como atributo do produto
+* **Princípio ativo** em tabela própria ou estrutura própria de relacionamento
+
+Isso permite:
+
+* agrupar similares e genéricos
+* buscar por substância
+* sugerir alternativa terapêutica equivalente
+* separar identidade comercial da identidade farmacológica
+
+---
+
+## 5.4. Princípio ativo e composição não são a mesma coisa
+
+Esse ponto do seu material também está correto, mas merece fechamento técnico.
+
+### Princípio ativo
+
+É a substância que faz efeito.
+
+### Composição
+
+É a fórmula completa, podendo incluir:
+
+* princípio ativo
+* excipientes
+* veículos
+* corantes
+* conservantes
+
+Para o **escopo do sistema de vendas e estoque**, você não precisa cadastrar a composição completa da bula em nível detalhado.
+
+A modelagem ideal é:
+
+* cadastrar **princípio ativo**
+* cadastrar **concentração/dosagem**
+* permitir associação de uma apresentação com uma ou mais substâncias ativas
+
+Ou seja: para fins operacionais, o sistema precisa modelar o que influencia atendimento, intercambialidade, busca e venda — não necessariamente toda a formulação química da bula.
+
+---
+
+# 6. Estrutura corporativa recomendada para o banco
+
+A melhor forma corporativa para “fechar o banco” do FarmaLocal é esta:
+
+## 6.1. Estratégia geral
+
+Usar:
+
+* **modelo relacional normalizado no núcleo**
+* **tabelas especializadas para domínios específicos**
+* **integridade forte no banco**
+* **campos flexíveis só para cenários não críticos**
+
+Traduzindo:
+
+* nada de uma tabela única gigante
+* nada de jogar tudo em JSON
+* nada de duplicar informações centrais
+* especialização onde a regra muda
+* estoque por lote
+* venda por apresentação
+* medicamento com detalhes próprios
+
+---
+
+## 6.2. Grandes blocos do modelo
+
+### Núcleo mestre
+
+* categoria
+* fabricante
+* produto
+* produto_apresentacao
+* substancia_ativa
+
+### Especialização farmacêutica
+
+* medicamento_detalhe
+* apresentacao_substancia
+* receita_venda_item
+
+### Operação
+
+* fornecedor
+* lote_estoque
+* movimento_estoque
+* venda
+* venda_item
+* pagamento
+
+### Relacionamento
+
+* cliente
+* convenio
+* cliente_convenio
+
+### Governança
+
+* usuario
+* filial
+* auditoria_log
+
+---
+
+# 7. Modelo lógico consolidado
+
+Abaixo está a versão mais madura da modelagem.
+
+## 7.1. `categoria`
+
+Representa o macrogrupo do item.
+
+**Campos sugeridos**
+
+* id
+* nome
+* descricao
+* ativo
+
+**Exemplos**
+
+* Medicamento
+* Higiene
+* Perfumaria
+* Equipamento
+* Correlato
+* Suplemento
+
+---
+
+## 7.2. `fabricante`
+
+Representa a empresa/laboratório.
+
+**Campos sugeridos**
+
+* id
+* razao_social
+* nome_fantasia
+* cnpj
+* email
+* telefone
+* ativo
+
+---
+
+## 7.3. `produto`
+
+Representa o item-base de catálogo.
+
+**Campos sugeridos**
+
+* id
+* categoria_id
+* fabricante_id
+* nome_comercial
+* nome_reduzido
+* descricao
+* tipo_produto
+* ativo
+* data_criacao
+* data_atualizacao
+
+### Observação
+
+Para genéricos, `nome_comercial` pode ser nulo, e o sistema pode exibir algo derivado do princípio ativo + fabricante.
+
+---
+
+## 7.4. `substancia_ativa`
+
+Representa o princípio ativo.
+
+**Campos sugeridos**
+
+* id
+* nome
+* descricao
+* ativo
+
+---
+
+## 7.5. `produto_apresentacao`
+
+Essa é uma das entidades mais importantes do sistema.
+
+Representa a forma vendável do produto.
+
+**Campos sugeridos**
+
+* id
+* produto_id
+* codigo_ean
+* sku_interno
+* unidade_medida
+* quantidade_embalagem
+* forma_farmaceutica
+* dosagem_texto
+* volume_texto
+* concentracao_principal_texto
+* preco_venda
+* ativo
+
+### Exemplos
+
+* Novalgina 500mg comprimido cx 20
+* Dipirona gotas 500mg/ml frasco 20ml
+* Fralda infantil G pacote 32 un
+* Medidor de pressão digital braço
+
+---
+
+## 7.6. `apresentacao_substancia`
+
+Relaciona uma apresentação a uma ou mais substâncias ativas.
+
+**Campos sugeridos**
+
+* id
+* apresentacao_id
+* substancia_ativa_id
+* concentracao
+* unidade_concentracao
+* principal
+
+### Por que ela é importante?
+
+Porque resolve:
+
+* busca por princípio ativo
+* agrupamento de genérico/similar/referência
+* produtos com mais de uma substância
+
+---
+
+## 7.7. `medicamento_detalhe`
+
+Tabela de extensão para apresentações que pertencem ao universo farmacêutico.
+
+**Campos sugeridos**
+
+* apresentacao_id
+* tipo_medicamento
+* registro_anvisa
+* tarja
+* requer_receita
+* retencao_receita
+* controlado_sngpc
+* uso_continuo
+* permite_intercambialidade
+* observacoes
+
+### Valores possíveis
+
+**tipo_medicamento**
+
+* Referência
+* Genérico
+* Similar
+
+**tarja**
+
+* Sem Tarja
+* Amarela
+* Vermelha
+* Preta
+
+---
+
+## 7.8. `fornecedor`
+
+Origem de compra do item.
+
+**Campos sugeridos**
+
+* id
+* razao_social
+* nome_fantasia
+* cnpj
+* telefone
+* email
+* ativo
+
+---
+
+## 7.9. `lote_estoque`
+
+Controla rastreabilidade, validade e quantidade do lote.
+
+**Campos sugeridos**
+
+* id
+* apresentacao_id
+* fornecedor_id
+* numero_lote
+* data_fabricacao
+* data_validade
+* quantidade_atual
+* quantidade_reservada
+* custo_unitario
+* ativo
+
+### Regra essencial
+
+A venda deve sugerir o lote com validade mais próxima, respeitando FEFO.
+
+---
+
+## 7.10. `movimento_estoque`
+
+Registra tudo que entra e sai do estoque.
+
+**Campos sugeridos**
+
+* id
+* lote_id
+* tipo_movimento
+* quantidade
+* data_movimento
+* documento_referencia
+* origem
+* usuario_id
+* observacoes
+
+### Tipos possíveis
+
+* Entrada
+* Saída
+* Ajuste
+* Perda
+* Cancelamento
+* Inventário
+
+---
+
+## 7.11. `cliente`
+
+Cadastro do consumidor.
+
+**Campos sugeridos**
+
+* id
+* nome
+* cpf
+* data_nascimento
+* telefone
+* email
+* ativo
+
+---
+
+## 7.12. `convenio`
+
+Tabela de convênios ou programas de desconto.
+
+**Campos sugeridos**
+
+* id
+* nome
+* percentual_desconto
+* ativo
+
+---
+
+## 7.13. `cliente_convenio`
+
+Relacionamento entre cliente e convênio.
+
+**Campos sugeridos**
+
+* id
+* cliente_id
+* convenio_id
+* matricula
+* ativo
+
+---
+
+## 7.14. `venda`
+
+Cabeçalho da venda.
+
+**Campos sugeridos**
+
+* id
+* filial_id
+* cliente_id
+* usuario_id
+* data_hora
+* subtotal
+* desconto
+* total
+* status
+
+### Status possíveis
+
+* Aberta
+* Finalizada
+* Cancelada
+
+---
+
+## 7.15. `venda_item`
+
+Itens da venda.
+
+**Campos sugeridos**
+
+* id
+* venda_id
+* apresentacao_id
+* lote_id
+* quantidade
+* preco_unitario
+* desconto
+* subtotal
+
+### Regra fundamental
+
+Todo item vendido deve apontar para a apresentação e, quando controlado por lote, para o lote específico.
+
+---
+
+## 7.16. `pagamento`
+
+Pagamentos vinculados à venda.
+
+**Campos sugeridos**
+
+* id
+* venda_id
+* tipo_pagamento
+* valor
+* data_pagamento
+* codigo_autorizacao
+* observacoes
+
+### Tipos possíveis
+
+* Dinheiro
+* Débito
+* Crédito
+* Pix
+* Convênio
+
+---
+
+## 7.17. `receita_venda_item`
+
+Guarda os dados de receita quando exigidos.
+
+**Campos sugeridos**
+
+* id
+* venda_item_id
+* nome_medico
+* crm
+* uf_crm
+* nome_paciente
+* cpf_paciente
+* data_emissao_receita
+* data_validade_receita
+* tipo_documento
+* receita_retida
+* observacoes
+
+### Observação
+
+Essa tabela deve ser obrigatória para itens cuja regra de negócio exigir retenção ou dados formais de prescrição.
+
+---
+
+## 7.18. `equipamento_detalhe`
+
+Especialização opcional para equipamentos.
+
+**Campos sugeridos**
+
+* apresentacao_id
+* garantia_meses
+* numero_registro
+* possui_anvisa
+* manual_url
+* voltagem
+
+---
+
+## 7.19. `produto_atributo_extra`
+
+Para itens não críticos com grande variação de atributos.
+
+**Campos sugeridos**
+
+* id
+* apresentacao_id
+* nome_atributo
+* valor_atributo
+
+Isso serve para:
+
+* fraldas
+* aparelhos
+* itens de higiene
+* variações comerciais que não justificam novas colunas
+
+### Exemplo
+
+Fralda:
+
+* tamanho = G
+* peso_suportado = 9kg a 12kg
+* quantidade_pacote = 32
+
+Esse recurso é bom, mas deve ser usado com moderação.
+Nunca deve substituir os campos críticos do domínio.
+
+---
+
+# 8. Regras de negócio fechadas
+
+Agora o merge das regras precisa ficar explícito.
+
+## 8.1. Venda acontece pela apresentação
+
+O PDV nunca vende o “produto abstrato”.
+Ele vende a **apresentação**.
+
+---
+
+## 8.2. Estoque é controlado por lote quando aplicável
+
+Medicamentos e vários itens farmacêuticos precisam de rastreabilidade por lote.
+
+---
+
+## 8.3. FEFO deve ser a regra padrão
+
+O lote sugerido deve ser o que vencer primeiro, desde que esteja válido e disponível.
+
+---
+
+## 8.4. Receita é obrigatória quando o item exigir
+
+Se `requer_receita = true`, o sistema precisa exigir dados mínimos de prescrição.
+
+---
+
+## 8.5. Retenção bloqueia finalização sem dados completos
+
+Se `retencao_receita = true`, a venda do item não deve ser concluída sem vínculo formal da receita.
+
+---
+
+## 8.6. Medicamento controlado exige fluxo especial
+
+Se `controlado_sngpc = true`, o sistema deve sinalizar fluxo especial e permitir futura integração/geração de dados regulatórios.
+
+---
+
+## 8.7. Busca deve ocorrer por múltiplos caminhos
+
+O balconista precisa encontrar o item por:
+
+* nome comercial
+* princípio ativo
+* EAN
+* fabricante
+* categoria
+
+---
+
+## 8.8. Genérico e referência precisam conviver no mesmo ecossistema
+
+O sistema deve permitir localizar um produto de marca e sugerir alternativas com mesmo princípio ativo.
+
+---
+
+## 8.9. Produtos não medicamentos seguem o mesmo núcleo
+
+Fralda, shampoo, medidor de pressão e suplemento devem estar no mesmo catálogo central, sem criar um sistema paralelo.
+
+---
+
+# 9. Como fechar o banco de forma corporativa
+
+Aqui está a resposta mais direta à sua necessidade prática.
+
+## 9.1. Fechar o banco não é só fazer o DER
+
+Você precisa fechar:
+
+* modelo conceitual
+* modelo lógico
+* nomenclatura
+* tipos de dados
+* constraints
+* índices
+* regras de nulidade
+* regras de negócio
+* scripts de migração
+* dados iniciais
+
+---
+
+## 9.2. Dicionário de dados obrigatório
+
+Crie um documento com:
+
+* tabela
+* finalidade
+* coluna
+* tipo
+* obrigatório ou não
+* default
+* FK
+* unique
+* check
+* regra funcional
+
+Sem isso, o banco fica “desenhado”, mas não governado.
+
+---
+
+## 9.3. Padronização de nomenclatura
+
+Sugestão:
+
+* tabelas em `snake_case`
+* chave primária sempre `id`
+* FK sempre `xxx_id`
+* datas em `data_criacao`, `data_atualizacao`
+* booleanos sem ambiguidade:
+
+  * ativo
+  * requer_receita
+  * controlado_sngpc
+  * receita_retida
+
+---
+
+## 9.4. Integridade no banco
+
+Não deixe toda a responsabilidade só na aplicação.
+
+Use:
+
+* `primary key`
+* `foreign key`
+* `unique`
+* `check constraints`
+* `not null`
+* índices
+
+### Exemplos
+
+* `codigo_ean` único quando preenchido
+* `cpf` único para cliente
+* `quantidade_atual >= 0`
+* `preco_venda >= 0`
+* `data_validade > data_fabricacao` quando aplicável
+
+---
+
+## 9.5. Normalização com pragmatismo
+
+A recomendação é:
+
+* núcleo em 3FN
+* sem duplicar fabricante
+* sem duplicar substância ativa
+* sem repetir categoria em tudo
+* views para leitura quando necessário
+
+---
+
+## 9.6. Versionamento do schema
+
+Isso é essencial para estudo sério e padrão corporativo.
+
+Estruture assim:
+
+```text
+/database
+  /postgresql
+    /migrations
+    /seeds
+    /views
+    /functions
+  /sqlserver
+    /migrations
+    /seeds
+    /views
+    /functions
 ```
 
-### Unit of Work
+Cada mudança no banco deve virar migration.
 
-Coordene múltiplos repositórios dentro da mesma transação:
+---
 
-```csharp
-public interface IUnitOfWork : IDisposable
-{
-    IMedicamentoRepository Medicamentos { get; }
-    IVendaRepository Vendas { get; }
-    Task<int> CommitAsync();
-    Task RollbackAsync();
-}
+# 10. Estratégia técnica para PostgreSQL e SQL Server
 
-public sealed class UnitOfWork : IUnitOfWork
-{
-    private readonly IDbConnection _connection;
-    private IDbTransaction? _transaction;
+Como você quer estudar múltiplos bancos, a melhor abordagem é:
 
-    public UnitOfWork(IDbConnection connection)
-    {
-        _connection = connection;
-        _connection.Open();
-        _transaction = _connection.BeginTransaction();
+## 10.1. Mesmo modelo lógico, implementação física adaptada
 
-        Medicamentos = new MedicamentoRepository(_connection, _transaction);
-        Vendas = new VendaRepository(_connection, _transaction);
-    }
+Mantenha iguais:
 
-    public IMedicamentoRepository Medicamentos { get; }
-    public IVendaRepository Vendas { get; }
+* entidades
+* relacionamentos
+* regras
+* nomes de tabelas
+* semântica do domínio
 
-    public Task<int> CommitAsync()
-    {
-        _transaction?.Commit();
-        return Task.FromResult(0);
-    }
+Adapte por SGBD:
 
-    public Task RollbackAsync()
-    {
-        _transaction?.Rollback();
-        return Task.CompletedTask;
-    }
+* tipos
+* identity/sequence
+* funções
+* sintaxe específica
+* JSON/JSONB
+* procedures
 
-    public void Dispose()
-    {
-        _transaction?.Dispose();
-        _connection.Dispose();
-    }
-}
-```
+---
 
-### CQRS (Command Query Responsibility Segregation)
+## 10.2. Estrutura recomendada do projeto
 
-Separe as operações de **leitura** (queries) das de **escrita** (commands). Em farmácias, relatórios e buscas são muito mais frequentes do que inserções. O CQRS permite otimizar cada lado de forma independente:
+```text
+/docs
+  modelo-negocio.md
+  regras-negocio.md
+  dicionario-dados.md
+  fluxos-operacionais.md
 
-```
-src/
-  Application/
-    Commands/
-      RegistrarVendaCommand.cs
-      RegistrarVendaHandler.cs
-    Queries/
-      ListarMedicamentosQuery.cs
-      ListarMedicamentosHandler.cs   ← Dapper direto, sem repositórios complexos
+/database
+  /postgresql
+    /migrations
+    /seeds
+    /scripts
+  /sqlserver
+    /migrations
+    /seeds
+    /scripts
+
+/src
+  /FarmaLocal.Domain
+  /FarmaLocal.Application
+  /FarmaLocal.Infrastructure
+  /FarmaLocal.Api
+  /FarmaLocal.Desktop
 ```
 
 ---
 
-## 🚀 Paginação e Performance
+# 11. Dapper no FarmaLocal
 
-### Paginação com OFFSET/FETCH
+O Dapper entra muito bem nesse projeto porque o domínio exige:
 
-Nunca retorne listas inteiras ao cliente. Use paginação do lado do banco:
+* consultas rápidas
+* joins claros
+* controle fino do SQL
+* transações explícitas
+* boa performance no PDV
 
-```csharp
-public async Task<PagedResult<Medicamento>> ListarPaginadoAsync(int pagina, int tamanhoPagina)
-{
-    const string sqlDados = """
-        SELECT Id, Nome, PrincipioAtivo, Estoque
-        FROM Medicamentos
-        ORDER BY Nome
-        OFFSET @Offset ROWS FETCH NEXT @TamanhoPagina ROWS ONLY
-        """;
+## 11.1. Onde usar Dapper
 
-    const string sqlTotal = "SELECT COUNT(*) FROM Medicamentos";
+* busca de produtos
+* consulta por EAN
+* listagem de estoque
+* seleção de lote FEFO
+* fechamento de venda
+* relatórios operacionais
 
-    // Ambos os fragmentos são constantes – não há interpolação de input do usuário
-    using var multi = await _db.QueryMultipleAsync(
-        sqlDados + "; " + sqlTotal,
-        new { Offset = (pagina - 1) * tamanhoPagina, TamanhoPagina = tamanhoPagina });
+## 11.2. Onde tomar cuidado
 
-    var dados = (await multi.ReadAsync<Medicamento>()).ToList();
-    int total = await multi.ReadFirstAsync<int>();
+* múltiplos inserts dependentes
+* controle de estoque
+* fechamento da venda
+* cancelamento
+* baixa de lote
 
-    return new PagedResult<Medicamento>(dados, total, pagina, tamanhoPagina);
-}
-```
+Esses cenários devem usar transação explícita.
 
-### Índices
+## 11.3. Fluxo transacional de venda
 
-Crie índices nas colunas mais consultadas. Ausência de índices é uma das causas mais comuns de lentidão:
+Exemplo ideal:
 
-```sql
--- Busca frequente por nome de medicamento
-CREATE INDEX IX_Medicamentos_Nome ON Medicamentos (Nome);
+1. abrir transação
+2. inserir venda
+3. inserir itens
+4. validar exigência de receita
+5. baixar lote
+6. inserir pagamentos
+7. gravar movimentos de estoque
+8. commit
 
--- Busca por princípio ativo
-CREATE INDEX IX_Medicamentos_PrincipioAtivo ON Medicamentos (PrincipioAtivo);
+Se qualquer etapa falhar:
 
--- Índice composto para relatórios de vendas por período e cliente
-CREATE INDEX IX_Vendas_ClienteId_DataVenda ON Vendas (ClienteId, DataVenda DESC);
-```
-
-> 💡 **Ponto de reflexão:** Índices aceleram leituras mas custam espaço e tornam escritas mais lentas. Como você avaliaria quais índices criar? Pesquise sobre o **Execution Plan** (SSMS / `EXPLAIN ANALYZE` no PostgreSQL) e **index selectivity**.
-
----
-
-## 🔄 Migrações de Banco de Dados
-
-Jamais altere o banco manualmente em produção. Use migrações versionadas:
-
-```
-database/
-  migrations/
-    V001__criar_tabela_medicamentos.sql
-    V002__criar_tabela_clientes.sql
-    V003__criar_tabela_vendas.sql
-    V004__criar_stored_procedure_registrar_venda.sql
-    V005__criar_view_estoque_critico.sql
-    V006__adicionar_indice_medicamentos_nome.sql
-```
-
-Cada arquivo deve ser **idempotente** quando possível:
-
-```sql
--- V001__criar_tabela_medicamentos.sql
-IF NOT EXISTS (
-    SELECT 1 FROM sys.tables
-    WHERE name = 'Medicamentos' AND schema_id = SCHEMA_ID('dbo')
-)
-BEGIN
-    CREATE TABLE Medicamentos (
-        Id              INT IDENTITY(1,1) PRIMARY KEY,
-        Nome            NVARCHAR(200)     NOT NULL,
-        PrincipioAtivo  NVARCHAR(200)     NOT NULL,
-        Estoque         INT               NOT NULL DEFAULT 0,
-        EstoqueMinimo   INT               NOT NULL DEFAULT 5,
-        Preco           DECIMAL(10, 2)    NOT NULL,
-        CriadoEm        DATETIME2         NOT NULL DEFAULT GETUTCDATE(),
-        AtualizadoEm    DATETIME2         NOT NULL DEFAULT GETUTCDATE()
-    );
-END;
-```
+* rollback
 
 ---
 
-## 🏗️ Arquitetura e Padrões de Projeto
+# 12. Escopo ideal de MVP
 
-```
-farmalocal/
-├── src/
-│   ├── FarmaLocal.API/            # Endpoints HTTP (Minimal APIs / Controllers)
-│   ├── FarmaLocal.Application/    # Use Cases, Commands, Queries, DTOs
-│   ├── FarmaLocal.Domain/         # Entidades, Value Objects, Enums, Interfaces
-│   └── FarmaLocal.Infrastructure/ # Repositórios (Dapper), Migrations, Configs
-├── tests/
-│   ├── FarmaLocal.UnitTests/      # Testes das regras de negócio (sem banco)
-│   └── FarmaLocal.IntegrationTests/ # Testes com banco real (Testcontainers)
-├── database/
-│   ├── migrations/                # Scripts SQL versionados
-│   └── seeds/                     # Dados iniciais para desenvolvimento
-└── docker-compose.yml
-```
+Para não explodir o escopo, o MVP pode ser:
 
-### Princípios aplicados
+## Cadastro
 
-- **Clean Architecture** – dependências apontam para dentro (domínio não depende de infraestrutura)
-- **Dependency Inversion** – repositórios e serviços injetados via interface
-- **Single Responsibility** – cada classe tem uma única razão para mudar
-- **Fail Fast** – validações e verificações de estoque ocorrem o quanto antes, evitando operações desnecessárias no banco
+* categoria
+* fabricante
+* substância ativa
+* produto
+* apresentação
+* medicamento_detalhe
+* lote
 
----
+## Operação
 
-## 🧠 Pensamento Crítico e Analítico para o Desenvolvedor
+* cliente
+* venda
+* venda_item
+* pagamento
+* receita_venda_item
 
-Este projeto foi desenhado para estimular perguntas difíceis. Para cada funcionalidade que você implementar, questione:
+## Regras
 
-### Sobre o banco de dados
-- [ ] Esta consulta vai funcionar bem com 1 milhão de registros? Existe índice nas colunas do `WHERE` e `ORDER BY`?
-- [ ] Estou buscando colunas que não utilizo (`SELECT *`)? Isso desperdiça banda de rede e memória.
-- [ ] A transação está no menor escopo possível? Transações longas causam bloqueios.
-- [ ] Devo usar otimismo (`ROWVERSION` / `ETag`) ou pessimismo (`WITH (UPDLOCK)`) para controlar concorrência?
-- [ ] Procedure ou lógica na aplicação? Qual é mais fácil de testar, versionar e manter?
+* busca por nome comercial e princípio ativo
+* venda por apresentação
+* baixa por lote
+* FEFO
+* exigência de receita quando aplicável
 
-### Sobre o código
-- [ ] Estou vazando a `IDbConnection` para camadas que não deveriam conhecer o banco?
-- [ ] A string de conexão está em variável de ambiente / secrets, não no `appsettings.json`?
-- [ ] Os repositórios são testáveis unitariamente? Posso substituir a conexão por um mock?
-- [ ] Estou tratando corretamente exceções do banco (`SqlException`, `DbException`)?
+## Relatórios
 
-### Sobre a arquitetura
-- [ ] Se eu precisar trocar SQL Server por PostgreSQL amanhã, quantos arquivos precisam mudar?
-- [ ] Minhas migrations são reversíveis? Consigo fazer rollback sem perder dados?
-- [ ] Os endpoints da API são idempotentes? Uma segunda chamada com os mesmos dados causa duplicação?
-- [ ] Como vou rastrear erros em produção? Os logs contêm contexto suficiente?
+* estoque atual
+* lotes a vencer
+* itens mais vendidos
+* vendas por período
 
-### Desafios propostos
-1. **Auditoria**: implemente uma tabela de log que registre automaticamente toda alteração em `Medicamentos` usando um trigger SQL.
-2. **Concorrência**: simule duas requisições simultâneas de venda do mesmo medicamento com estoque = 1. Qual nível de isolamento garante que apenas uma seja aprovada?
-3. **Relatório de desempenho**: use `EXPLAIN ANALYZE` (PostgreSQL) ou o "Execution Plan" (SQL Server) para comparar uma consulta sem índice e com índice.
-4. **Retry com Polly**: adicione uma política de retry para transações que falham por deadlock (`SqlException` com código 1205).
-5. **Soft Delete**: implemente exclusão lógica (`AtivoEm`/`InativoEm`) e garanta que todas as queries filtrem corretamente os registros inativos.
+Esse MVP já é muito forte para estudo.
 
 ---
 
-## ▶️ Como Executar o Projeto
+# 13. Conclusão consolidada
 
-### Pré-requisitos
+O merge completo entre o seu material bruto e a estrutura mais corporativa resulta nesta decisão:
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Docker](https://www.docker.com/) (para o banco de dados)
+## Decisão oficial para o FarmaLocal
 
-### Subindo o banco com Docker
+O FarmaLocal deve ser construído como um **sistema de farmácia baseado em um catálogo central de produtos**, com **especializações para medicamentos e outros tipos de item**, **controle de estoque por lote**, **venda transacional por apresentação**, **regras regulatórias explícitas**, e **documentação formal do banco**, permitindo estudo sério de SQL, C#, Dapper e implementações futuras em outras stacks.
 
-```bash
-docker compose up -d
-```
+## Em termos práticos, isso significa:
 
-### Executando as migrações
-
-```bash
-# Exemplo com script de migração manual
-dotnet run --project src/FarmaLocal.Migrations
-```
-
-### Rodando a API
-
-```bash
-dotnet run --project src/FarmaLocal.API
-```
-
-A documentação interativa da API estará disponível em: `https://localhost:5001/scalar`
-
-### Executando os testes
-
-```bash
-# Testes unitários
-dotnet test tests/FarmaLocal.UnitTests
-
-# Testes de integração (requer Docker)
-dotnet test tests/FarmaLocal.IntegrationTests
-```
-
----
-
-## 🤝 Contribuição
-
-1. Faça um fork do repositório
-2. Crie uma branch: `git checkout -b feature/minha-feature`
-3. Implemente sua mudança seguindo os padrões do projeto
-4. Escreva testes para o código novo
-5. Abra um Pull Request descrevendo o problema resolvido e a solução adotada
+* produto base
+* apresentação vendável
+* medicamento como extensão
+* princípio ativo separado
+* lote separado
+* venda por lote
+* receita vinculada ao item
+* banco normalizado
+* schema versionado
+* domínio reaproveitável entre PostgreSQL e SQL Server
 
 ---
 

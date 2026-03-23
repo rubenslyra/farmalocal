@@ -762,24 +762,3 @@ app.Run();
 
 Retorna lista filtrada.
 
----
-
-# 15. Próxima etapa certa
-
-Com isso, você já tem um backend inicial funcional.
-A sequência ideal agora é:
-
-1. ajustar o schema no PostgreSQL
-2. subir essa API
-3. testar cadastro/listagem de produto
-4. depois implementar `produto_apresentacao`
-5. depois `lote_estoque`
-6. depois `venda`
-
-O próximo passo mais útil é eu montar o **módulo de estoque completo**, já com:
-
-* `LoteEstoque`
-* `MovimentoEstoque`
-* repositório Dapper
-* busca FEFO
-* endpoints de entrada e consulta

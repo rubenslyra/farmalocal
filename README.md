@@ -1,20 +1,4 @@
-# 💊 FarmaLocal
-
-Sistema de gerenciamento para farmácias locais, desenvolvido com **.NET 10**, focado em boas práticas de acesso a dados, arquitetura limpa e estímulo ao pensamento crítico e analítico do desenvolvedor.
----
-
-Sim — e o melhor caminho é justamente transformar os dois em uma **proposta única, coerente e madura**, unindo:
-
-* o **material bruto de pesquisa farmacêutica**
-* a **visão de negócio do FarmaLocal**
-* a **modelagem corporativa do banco**
-* a **estratégia técnica para estudo com SQL, C#, Dapper e futuras variações**
-
-Abaixo está o **merge completo e rico**, já consolidado como base oficial do projeto.
-
----
-
-# FarmaLocal — Modelo de Negócio + Modelo de Dados + Direção Técnica
+# 💊 FarmaLocal — Modelo de Negócio + Modelo de Dados + Direção Técnica
 
 ## 1. Visão geral do projeto
 
